@@ -57,55 +57,66 @@ cmd_launch() {
   local base_cmd
   base_cmd=$(jq -r '.defaults.command // "ccb"' "$CONFIG")
 
-  # Build the AppleScript program in a variable, then hand it to osascript once.
-  local script='tell application "iTerm2"
-  activate
-  set newWindow to (create window with default profile)
-'
+  # Generate JXA via Python, pipe directly to osascript
+  python3 - "$CONFIG" "$base_cmd" <<'PYEOF' | osascript -l JavaScript >/dev/null
+import json, os, sys
 
-  local i name path resume cmd cmd_esc name_esc
-  for i in $(seq 0 $((count - 1))); do
-    name=$(jq -r   ".sessions[$i].name"           "$CONFIG")
-    path=$(jq -r   ".sessions[$i].path"           "$CONFIG")
-    resume=$(jq -r ".sessions[$i].resume // \"\"" "$CONFIG")
-    path="${path/#\~/$HOME}"
+config_path, base_cmd = sys.argv[1], sys.argv[2]
+with open(config_path) as f:
+    sessions = json.load(f).get("sessions", [])
 
-    # Set tab title via OSC escape sequence (survives shell/app title changes)
-    local title_cmd="printf '\\e]1;${name}\\a'"
+def js_esc(s):
+    return s.replace("\\", "\\\\").replace('"', '\\"')
 
-    if [[ -n "$resume" ]]; then
-      cmd="cd '$path' && $title_cmd && ($base_cmd --resume '$resume' || (echo '⚠ session \"$resume\" not found or already active — starting fresh' && $base_cmd))"
-    else
-      cmd="cd '$path' && $title_cmd && $base_cmd"
-    fi
+lines = [
+    'var iTerm = Application("iTerm");',
+    'iTerm.activate();',
+    # Reuse existing empty window if iTerm just opened one, otherwise create new
+    'var win;',
+    'if (iTerm.windows.length > 0 && iTerm.windows[0].tabs.length === 1) {',
+    '  win = iTerm.windows[0];',
+    '} else {',
+    '  win = iTerm.createWindowWithDefaultProfile();',
+    '}',
+    # Position window on right half of screen
+    'ObjC.import("AppKit");',
+    'var screen = $.NSScreen.mainScreen.frame;',
+    'var halfW = screen.size.width / 2;',
+    'win.bounds = {x: halfW, y: 0, width: halfW, height: screen.size.height};',
+    'delay(1);',
+]
+for i, s in enumerate(sessions):
+    name = s["name"]
+    path = os.path.expanduser(s["path"])
+    resume = s.get("resume") or ""
 
-    # Escape double quotes and backslashes for AppleScript string literal
-    cmd_esc="${cmd//\\/\\\\}"
-    cmd_esc="${cmd_esc//\"/\\\"}"
-    name_esc="${name//\"/\\\"}"
+    title = f"printf '\\e]1;{name}\\a'"
+    if resume:
+        cmd = f"cd '{path}' && {title} && ({base_cmd} --resume '{resume}' || (echo '⚠ session \"{resume}\" not found — starting fresh' && {base_cmd}))"
+    else:
+        cmd = f"cd '{path}' && {title} && {base_cmd}"
 
-    if [[ "$i" -eq 0 ]]; then
-      script+="
-  tell current session of newWindow
-    set name to \"$name_esc\"
-    write text \"$cmd_esc\"
-  end tell"
-    else
-      script+="
-  tell newWindow
-    create tab with default profile
-  end tell
-  tell current session of newWindow
-    set name to \"$name_esc\"
-    write text \"$cmd_esc\"
-  end tell"
-    fi
-  done
+    if i > 0:
+        lines.append('win.createTabWithDefaultProfile();')
+    lines.append(f'win.currentSession().name = "{js_esc(name)}";')
+    lines.append(f'win.currentSession().write({{text: "{js_esc(cmd)}"}});')
 
-  script+='
-end tell'
+# Select first tab
+lines.append('win.tabs[0].select();')
 
-  osascript -e "$script" >/dev/null
+# Auto-confirm: Enter at 5s (channels prompt), Enter at 15s (resume prompt)
+lines.append('var tabs = win.tabs;')
+lines.append('delay(5);')
+lines.append('for (var i = 0; i < tabs.length; i++) {')
+lines.append('  tabs[i].currentSession().write({text: ""});')
+lines.append('}')
+lines.append('delay(10);')
+lines.append('for (var i = 0; i < tabs.length; i++) {')
+lines.append('  tabs[i].currentSession().write({text: ""});')
+lines.append('}')
+
+print("\n".join(lines))
+PYEOF
   echo "run-cc: launched $count session(s) in iTerm2"
 }
 
