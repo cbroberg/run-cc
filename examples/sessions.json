@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "defaults": {
+    "command": "ccb"
+  },
+  "sessions": [
+    {
+      "name": "cms",
+      "path": "~/Apps/webhouse/cms",
+      "resume": "f111-external-publishing"
+    },
+    {
+      "name": "whop",
+      "path": "~/Apps/webhouse/whop",
+      "resume": "whop-f1-foundation"
+    },
+    {
+      "name": "cpm",
+      "path": "~/Apps/webhouse/cpm",
+      "resume": null
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG="${RUN_CC_CONFIG:-$HOME/.config/run-cc/sessions.json}"
+SUBCMD="${1:-launch}"
+
+usage() {
+  cat <<EOF
+run-cc — Claude Code session launcher for iTerm2
+
+Usage:
+  run-cc [launch]                       Launch all sessions from config
+  run-cc list                           List configured sessions
+  run-cc add <name> <path> [<resume>]   Append a new session to config
+  run-cc remove <name>                  Remove a session by name
+  run-cc edit                           Open config in \$EDITOR
+  run-cc path                           Print config file path
+
+Config: \$RUN_CC_CONFIG or ~/.config/run-cc/sessions.json
+EOF
+}
+
+require_jq() {
+  command -v jq >/dev/null || {
+    echo "run-cc: jq required (brew install jq)" >&2
+    exit 1
+  }
+}
+
+require_config() {
+  if [[ ! -f "$CONFIG" ]]; then
+    echo "run-cc: no config at $CONFIG" >&2
+    echo "run 'run-cc add <name> <path> [<resume>]' to create one" >&2
+    exit 1
+  fi
+}
+
+ensure_config_dir() {
+  mkdir -p "$(dirname "$CONFIG")"
+  if [[ ! -f "$CONFIG" ]]; then
+    echo '{"version":1,"defaults":{"command":"ccb"},"sessions":[]}' > "$CONFIG"
+  fi
+}
+
+cmd_launch() {
+  require_jq
+  require_config
+
+  local count
+  count=$(jq '.sessions | length' "$CONFIG")
+  if [[ "$count" -eq 0 ]]; then
+    echo "run-cc: no sessions in config"
+    exit 0
+  fi
+
+  local base_cmd
+  base_cmd=$(jq -r '.defaults.command // "ccb"' "$CONFIG")
+
+  # Build the AppleScript program in a variable, then hand it to osascript once.
+  local script='tell application "iTerm2"
+  activate
+  set newWindow to (create window with default profile)
+'
+
+  local i name path resume cmd cmd_esc name_esc
+  for i in $(seq 0 $((count - 1))); do
+    name=$(jq -r   ".sessions[$i].name"           "$CONFIG")
+    path=$(jq -r   ".sessions[$i].path"           "$CONFIG")
+    resume=$(jq -r ".sessions[$i].resume // \"\"" "$CONFIG")
+    path="${path/#\~/$HOME}"
+
+    if [[ -n "$resume" ]]; then
+      cmd="cd '$path' && $base_cmd --resume '$resume' || $base_cmd"
+    else
+      cmd="cd '$path' && $base_cmd"
+    fi
+
+    # Escape double quotes and backslashes for AppleScript string literal
+    cmd_esc="${cmd//\\/\\\\}"
+    cmd_esc="${cmd_esc//\"/\\\"}"
+    name_esc="${name//\"/\\\"}"
+
+    if [[ "$i" -eq 0 ]]; then
+      script+="
+  tell current session of newWindow
+    set name to \"$name_esc\"
+    write text \"$cmd_esc\"
+  end tell"
+    else
+      script+="
+  tell newWindow
+    create tab with default profile
+  end tell
+  tell current session of newWindow
+    set name to \"$name_esc\"
+    write text \"$cmd_esc\"
+  end tell"
+    fi
+  done
+
+  script+='
+end tell'
+
+  osascript -e "$script" >/dev/null
+  echo "run-cc: launched $count session(s) in iTerm2"
+}
+
+cmd_list() {
+  require_jq
+  require_config
+  jq -r '.sessions[] | "\(.name)\t\(.path)\t\(.resume // "—")"' "$CONFIG" \
+    | column -t -s $'\t' -N NAME,PATH,RESUME
+}
+
+cmd_add() {
+  require_jq
+  ensure_config_dir
+  local name="${2:-}" path="${3:-}" resume="${4:-}"
+  if [[ -z "$name" || -z "$path" ]]; then
+    echo "run-cc: usage: run-cc add <name> <path> [<resume>]" >&2
+    exit 1
+  fi
+  local tmp
+  tmp=$(mktemp)
+  if [[ -n "$resume" ]]; then
+    jq --arg n "$name" --arg p "$path" --arg r "$resume" \
+      '.sessions += [{name:$n, path:$p, resume:$r}]' "$CONFIG" > "$tmp"
+  else
+    jq --arg n "$name" --arg p "$path" \
+      '.sessions += [{name:$n, path:$p, resume:null}]' "$CONFIG" > "$tmp"
+  fi
+  mv "$tmp" "$CONFIG"
+  echo "run-cc: added '$name'"
+}
+
+cmd_remove() {
+  require_jq
+  require_config
+  local name="${2:-}"
+  [[ -z "$name" ]] && { echo "run-cc: usage: run-cc remove <name>" >&2; exit 1; }
+  local tmp
+  tmp=$(mktemp)
+  jq --arg n "$name" '.sessions |= map(select(.name != $n))' "$CONFIG" > "$tmp"
+  mv "$tmp" "$CONFIG"
+  echo "run-cc: removed '$name'"
+}
+
+cmd_edit() {
+  ensure_config_dir
+  "${EDITOR:-code}" "$CONFIG"
+}
+
+cmd_path() {
+  echo "$CONFIG"
+}
+
+case "$SUBCMD" in
+  launch|"")    cmd_launch       ;;
+  list)         cmd_list         ;;
+  add)          cmd_add "$@"     ;;
+  remove|rm)    cmd_remove "$@"  ;;
+  edit)         cmd_edit         ;;
+  path)         cmd_path         ;;
+  -h|--help|help) usage          ;;
+  *)            usage; exit 1    ;;
+esac
