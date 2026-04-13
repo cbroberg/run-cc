@@ -108,11 +108,9 @@ end tell'
 cmd_list() {
   require_jq
   require_config
-  printf "%-14s %-40s %s\n" "NAME" "PATH" "RESUME"
-  jq -r '.sessions[] | "\(.name)\t\(.path)\t\(.resume // "—")"' "$CONFIG" \
-    | while IFS=$'\t' read -r n p r; do
-        printf "%-14s %-40s %s\n" "$n" "$p" "$r"
-      done
+  (echo "NAME	PATH	RESUME";
+   jq -r '.sessions[] | "\(.name)\t\(.path)\t\(.resume // "—")"' "$CONFIG") \
+    | column -t -s $'\t'
 }
 
 cmd_add() {
