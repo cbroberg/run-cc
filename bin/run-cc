@@ -13,6 +13,7 @@ Usage:
   run-cc list                           List configured sessions
   run-cc add <name> <path> [<resume>]   Append a new session to config
   run-cc remove <name>                  Remove a session by name
+  run-cc eco                            Open config in TextMate
   run-cc edit                           Open config in \$EDITOR
   run-cc path                           Print config file path
 
@@ -69,10 +70,13 @@ cmd_launch() {
     resume=$(jq -r ".sessions[$i].resume // \"\"" "$CONFIG")
     path="${path/#\~/$HOME}"
 
+    # Set tab title via OSC escape sequence (survives shell/app title changes)
+    local title_cmd="printf '\\e]1;${name}\\a'"
+
     if [[ -n "$resume" ]]; then
-      cmd="cd '$path' && $base_cmd --resume '$resume' || $base_cmd"
+      cmd="cd '$path' && $title_cmd && ($base_cmd --resume '$resume' || (echo '⚠ session \"$resume\" not found or already active — starting fresh' && $base_cmd))"
     else
-      cmd="cd '$path' && $base_cmd"
+      cmd="cd '$path' && $title_cmd && $base_cmd"
     fi
 
     # Escape double quotes and backslashes for AppleScript string literal
@@ -146,6 +150,11 @@ cmd_remove() {
   echo "run-cc: removed '$name'"
 }
 
+cmd_eco() {
+  require_config
+  mate "$CONFIG"
+}
+
 cmd_edit() {
   ensure_config_dir
   "${EDITOR:-code}" "$CONFIG"
@@ -160,6 +169,7 @@ case "$SUBCMD" in
   list)         cmd_list         ;;
   add)          cmd_add "$@"     ;;
   remove|rm)    cmd_remove "$@"  ;;
+  eco)          cmd_eco          ;;
   edit)         cmd_edit         ;;
   path)         cmd_path         ;;
   -h|--help|help) usage          ;;
