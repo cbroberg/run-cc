@@ -1,4 +1,4 @@
-# run-cc — Claude Code Session Launcher for iTerm2
+# ccrun — Claude Code Session Launcher for iTerm2
 
 > A pm2-ecosystem-style launcher that restores all your Claude Code sessions
 > into a fresh iTerm2 window with one command after a crash or reboot.
@@ -18,7 +18,7 @@ but do **not** re-run commands, so `ccb --resume` is still manual per tab.
 
 ## Solution
 
-A single JSON config file lists the sessions you normally run. A `run-cc`
+A single JSON config file lists the sessions you normally run. A `ccrun`
 shell command reads the config and uses iTerm2's AppleScript API to:
 
 1. Open a fresh iTerm2 window
@@ -28,8 +28,8 @@ shell command reads the config and uses iTerm2's AppleScript API to:
 5. Run `ccb --resume "<name>"` (with a fallback to plain `ccb` if the session
    can't be resumed)
 
-Config lives at `~/.config/run-cc/sessions.json` and can be hand-edited in
-VS Code or mutated by `cc` itself via `jq`. A small `run-cc add|remove|list`
+Config lives at `~/.config/ccrun/sessions.json` and can be hand-edited in
+VS Code or mutated by `cc` itself via `jq`. A small `ccrun add|remove|list`
 CLI sits on top for convenience.
 
 ### Why iTerm2 AppleScript (not keystroke injection)
@@ -54,17 +54,17 @@ native CLI for "open new tab in existing window" yet
 ### 1. Repository layout
 
 ```
-run-cc/
+ccrun/
 ├── README.md                 # User-facing docs
 ├── PLAN.md                   # This file
 ├── LICENSE                   # MIT
 ├── bin/
-│   └── run-cc                # Main bash entrypoint (executable)
+│   └── ccrun                # Main bash entrypoint (executable)
 ├── lib/
-│   └── launch.applescript.sh # AppleScript builder (sourced by bin/run-cc)
+│   └── launch.applescript.sh # AppleScript builder (sourced by bin/ccrun)
 ├── examples/
 │   └── sessions.json         # Example config shipped in the repo
-└── install.sh                # Copies bin/run-cc to /usr/local/bin, sets up config dir
+└── install.sh                # Copies bin/ccrun to /usr/local/bin, sets up config dir
 ```
 
 Keeping the AppleScript builder in `lib/` (rather than inlining it in the
@@ -73,7 +73,7 @@ version without touching the CLI surface.
 
 ### 2. Config schema
 
-File: `~/.config/run-cc/sessions.json`
+File: `~/.config/ccrun/sessions.json`
 
 ```json
 {
@@ -121,42 +121,42 @@ Field semantics:
 
 ### 3. The launcher script
 
-File: `bin/run-cc`
+File: `bin/ccrun`
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="${RUN_CC_CONFIG:-$HOME/.config/run-cc/sessions.json}"
+CONFIG="${CCRUN_CONFIG:-$HOME/.config/ccrun/sessions.json}"
 SUBCMD="${1:-launch}"
 
 usage() {
   cat <<EOF
-run-cc — Claude Code session launcher for iTerm2
+ccrun — Claude Code session launcher for iTerm2
 
 Usage:
-  run-cc [launch]                       Launch all sessions from config
-  run-cc list                           List configured sessions
-  run-cc add <name> <path> [<resume>]   Append a new session to config
-  run-cc remove <name>                  Remove a session by name
-  run-cc edit                           Open config in \$EDITOR
-  run-cc path                           Print config file path
+  ccrun [launch]                       Launch all sessions from config
+  ccrun list                           List configured sessions
+  ccrun add <name> <path> [<resume>]   Append a new session to config
+  ccrun remove <name>                  Remove a session by name
+  ccrun edit                           Open config in \$EDITOR
+  ccrun path                           Print config file path
 
-Config: \$RUN_CC_CONFIG or ~/.config/run-cc/sessions.json
+Config: \$CCRUN_CONFIG or ~/.config/ccrun/sessions.json
 EOF
 }
 
 require_jq() {
   command -v jq >/dev/null || {
-    echo "run-cc: jq required (brew install jq)" >&2
+    echo "ccrun: jq required (brew install jq)" >&2
     exit 1
   }
 }
 
 require_config() {
   if [[ ! -f "$CONFIG" ]]; then
-    echo "run-cc: no config at $CONFIG" >&2
-    echo "run 'run-cc add <name> <path> [<resume>]' to create one" >&2
+    echo "ccrun: no config at $CONFIG" >&2
+    echo "run 'ccrun add <name> <path> [<resume>]' to create one" >&2
     exit 1
   fi
 }
@@ -175,7 +175,7 @@ cmd_launch() {
   local count
   count=$(jq '.sessions | length' "$CONFIG")
   if [[ "$count" -eq 0 ]]; then
-    echo "run-cc: no sessions in config"
+    echo "ccrun: no sessions in config"
     exit 0
   fi
 
@@ -228,7 +228,7 @@ cmd_launch() {
 end tell'
 
   osascript -e "$script" >/dev/null
-  echo "run-cc: launched $count session(s) in iTerm2"
+  echo "ccrun: launched $count session(s) in iTerm2"
 }
 
 cmd_list() {
@@ -243,7 +243,7 @@ cmd_add() {
   ensure_config_dir
   local name="${2:-}" path="${3:-}" resume="${4:-}"
   if [[ -z "$name" || -z "$path" ]]; then
-    echo "run-cc: usage: run-cc add <name> <path> [<resume>]" >&2
+    echo "ccrun: usage: ccrun add <name> <path> [<resume>]" >&2
     exit 1
   fi
   local tmp
@@ -256,19 +256,19 @@ cmd_add() {
       '.sessions += [{name:$n, path:$p, resume:null}]' "$CONFIG" > "$tmp"
   fi
   mv "$tmp" "$CONFIG"
-  echo "run-cc: added '$name'"
+  echo "ccrun: added '$name'"
 }
 
 cmd_remove() {
   require_jq
   require_config
   local name="${2:-}"
-  [[ -z "$name" ]] && { echo "run-cc: usage: run-cc remove <name>" >&2; exit 1; }
+  [[ -z "$name" ]] && { echo "ccrun: usage: ccrun remove <name>" >&2; exit 1; }
   local tmp
   tmp=$(mktemp)
   jq --arg n "$name" '.sessions |= map(select(.name != $n))' "$CONFIG" > "$tmp"
   mv "$tmp" "$CONFIG"
-  echo "run-cc: removed '$name'"
+  echo "ccrun: removed '$name'"
 }
 
 cmd_edit() {
@@ -313,10 +313,10 @@ sequences. If you ever see the name get clobbered by the shell, the fix is:
 With that unchecked, the name you set via AppleScript is sticky for the life
 of the tab.
 
-If you'd rather keep shell-driven titles globally but still have `run-cc`
-override them, use the profile-level approach: create a dedicated "run-cc"
+If you'd rather keep shell-driven titles globally but still have `ccrun`
+override them, use the profile-level approach: create a dedicated "ccrun"
 iTerm2 profile with that checkbox unchecked, and change the launcher to use
-`(create window with profile "run-cc")` instead of `default profile`.
+`(create window with profile "ccrun")` instead of `default profile`.
 
 ### 5. Installation script
 
@@ -327,19 +327,19 @@ File: `install.sh`
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN_SRC="$REPO_DIR/bin/run-cc"
-BIN_DST="/usr/local/bin/run-cc"
-CONFIG_DIR="$HOME/.config/run-cc"
+BIN_SRC="$REPO_DIR/bin/ccrun"
+BIN_DST="/usr/local/bin/ccrun"
+CONFIG_DIR="$HOME/.config/ccrun"
 CONFIG_FILE="$CONFIG_DIR/sessions.json"
 
 command -v jq >/dev/null || {
-  echo "run-cc: jq is required. Install with: brew install jq" >&2
+  echo "ccrun: jq is required. Install with: brew install jq" >&2
   exit 1
 }
 
 # Check iTerm2 is installed
 if [[ ! -d "/Applications/iTerm.app" ]]; then
-  echo "run-cc: iTerm2 not found at /Applications/iTerm.app" >&2
+  echo "ccrun: iTerm2 not found at /Applications/iTerm.app" >&2
   echo "Install iTerm2 first: https://iterm2.com" >&2
   exit 1
 fi
@@ -356,13 +356,13 @@ echo "installed: $BIN_DST"
 mkdir -p "$CONFIG_DIR"
 if [[ ! -f "$CONFIG_FILE" ]]; then
   cp "$REPO_DIR/examples/sessions.json" "$CONFIG_FILE"
-  echo "created: $CONFIG_FILE (example config — edit with 'run-cc edit')"
+  echo "created: $CONFIG_FILE (example config — edit with 'ccrun edit')"
 else
   echo "kept:    $CONFIG_FILE (already exists)"
 fi
 
 echo ""
-echo "done. try: run-cc list"
+echo "done. try: ccrun list"
 ```
 
 ## Implementation Steps
@@ -370,35 +370,35 @@ echo "done. try: run-cc list"
 Phase 1 — **bootstrap** *(the part cc does)*
 
 1. Create repo structure as listed above.
-2. Write `bin/run-cc` verbatim from §3.
+2. Write `bin/ccrun` verbatim from §3.
 3. Write `install.sh` from §5.
 4. Write `examples/sessions.json` with 2–3 placeholder entries.
 5. Write `README.md` with: one-paragraph overview, install instructions
-   (`./install.sh`), usage (`run-cc`, `run-cc add`, `run-cc list`, etc.),
+   (`./install.sh`), usage (`ccrun`, `ccrun add`, `ccrun list`, etc.),
    and a link to `PLAN.md` for rationale.
-6. `chmod +x bin/run-cc install.sh`.
-7. Initial commit, push to `github.com/cbroberg/run-cc` (private).
+6. `chmod +x bin/ccrun install.sh`.
+7. Initial commit, push to `github.com/cbroberg/ccrun` (private).
 
 Phase 2 — **first real use**
 
 1. Run `./install.sh`.
-2. `run-cc edit` — populate with the actual cc sessions in rotation right now
+2. `ccrun edit` — populate with the actual cc sessions in rotation right now
    (cms, whop, music-quiz, cpm, cronjobs, …).
-3. `run-cc` — verify all tabs spawn, are named correctly, and land in the
+3. `ccrun` — verify all tabs spawn, are named correctly, and land in the
    right directory with `ccb --resume` running.
 4. If tab titles get clobbered by the shell, apply the profile fix from §4.
 
 Phase 3 — **nice-to-haves** *(optional, later)*
 
-- `run-cc doctor` — checks iTerm2 is installed, `ccb` is on PATH, config is
+- `ccrun doctor` — checks iTerm2 is installed, `ccb` is on PATH, config is
   valid JSON, and every `path` exists.
-- `run-cc save` — introspect the currently-open iTerm2 window and dump its
+- `ccrun save` — introspect the currently-open iTerm2 window and dump its
   tabs back to `sessions.json` (AppleScript can read `name` and the tab's
   working directory, so this is feasible). Effectively "pm2 save" for your
   terminal layout.
 - Per-session `profile` field to launch specific tabs with specific iTerm2
   profiles (different colors for prod vs dev, for example).
-- A `groups` concept — `run-cc launch --group cms` to launch only a subset.
+- A `groups` concept — `ccrun launch --group cms` to launch only a subset.
 
 ## Dependencies
 
@@ -411,9 +411,9 @@ Nothing else. No Python, no Node, no Homebrew formula required.
 
 ## Open Questions
 
-1. **Should `run-cc` reuse an existing iTerm window if one is open?** Current
+1. **Should `ccrun` reuse an existing iTerm window if one is open?** Current
    design always spawns a fresh window, which is simpler and safer but means
-   running `run-cc` twice gives you two windows. For the crash-recovery use
+   running `ccrun` twice gives you two windows. For the crash-recovery use
    case this is fine. Revisit if it becomes annoying.
 2. **How should `ccb --resume` failures surface?** The `|| $base_cmd` fallback
    means a missing session silently becomes a fresh `ccb`. That's probably the
