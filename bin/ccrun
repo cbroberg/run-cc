@@ -145,10 +145,10 @@ cmd_add() {
   tmp=$(mktemp)
   if [[ -n "$resume" ]]; then
     jq --arg n "$name" --arg p "$path" --arg r "$resume" \
-      '.sessions += [{name:$n, path:$p, resume:$r}]' "$CONFIG" > "$tmp"
+      '.sessions += [{name:$n, path:$p, resume:$r, run:true}]' "$CONFIG" > "$tmp"
   else
     jq --arg n "$name" --arg p "$path" \
-      '.sessions += [{name:$n, path:$p, resume:null}]' "$CONFIG" > "$tmp"
+      '.sessions += [{name:$n, path:$p, resume:null, run:true}]' "$CONFIG" > "$tmp"
   fi
   mv "$tmp" "$CONFIG"
   echo "ccrun: added '$name'"
@@ -168,6 +168,7 @@ cmd_remove() {
 
 cmd_eco() {
   require_config
+  echo "ccrun: opening $CONFIG"
   mate "$CONFIG"
 }
 
