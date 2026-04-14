@@ -47,10 +47,15 @@ cmd_launch() {
   require_jq
   require_config
 
-  local count
-  count=$(jq '.sessions | length' "$CONFIG")
-  if [[ "$count" -eq 0 ]]; then
+  local count total
+  total=$(jq '.sessions | length' "$CONFIG")
+  count=$(jq '[.sessions[] | select(.run != false)] | length' "$CONFIG")
+  if [[ "$total" -eq 0 ]]; then
     echo "ccrun: no sessions in config"
+    exit 0
+  fi
+  if [[ "$count" -eq 0 ]]; then
+    echo "ccrun: all $total session(s) paused (run:false) — nothing to launch"
     exit 0
   fi
 
@@ -63,7 +68,7 @@ import json, os, sys
 
 config_path, base_cmd = sys.argv[1], sys.argv[2]
 with open(config_path) as f:
-    sessions = json.load(f).get("sessions", [])
+    sessions = [s for s in json.load(f).get("sessions", []) if s.get("run", True) is not False]
 
 def js_esc(s):
     return s.replace("\\", "\\\\").replace('"', '\\"')
@@ -123,8 +128,8 @@ PYEOF
 cmd_list() {
   require_jq
   require_config
-  (echo "NAME	PATH	RESUME";
-   jq -r '.sessions[] | "\(.name)\t\(.path)\t\(.resume // "—")"' "$CONFIG") \
+  (echo "NAME	RUN	PATH	RESUME";
+   jq -r '.sessions[] | "\(.name)\t\(if .run == false then "no" else "yes" end)\t\(.path)\t\(.resume // "—")"' "$CONFIG") \
     | column -t -s $'\t'
 }
 

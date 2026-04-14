@@ -44,7 +44,8 @@ Lives at `~/.config/ccrun/sessions.json` (override with `$CCRUN_CONFIG`):
   "defaults": { "command": "ccb" },
   "sessions": [
     { "name": "cms", "path": "~/code/webhouse/cms", "resume": "f111-external-publishing" },
-    { "name": "whop", "path": "~/code/webhouse/whop", "resume": null }
+    { "name": "whop", "path": "~/code/webhouse/whop", "resume": null },
+    { "name": "cpm", "path": "~/code/webhouse/cpm", "resume": null, "run": false }
   ]
 }
 ```
@@ -52,6 +53,7 @@ Lives at `~/.config/ccrun/sessions.json` (override with `$CCRUN_CONFIG`):
 - **name** — iTerm tab title (keep short, <= 12 chars)
 - **path** — working directory (`~` is expanded)
 - **resume** — Claude Code session name to `--resume`, or `null` for a fresh session
+- **run** — optional. Set `false` to pause a session (kept in config, skipped by `launch`). Defaults to `true`.
 
 ## Tab naming
 

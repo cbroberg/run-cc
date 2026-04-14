@@ -17,7 +17,8 @@
     {
       "name": "cpm",
       "path": "~/Apps/webhouse/cpm",
-      "resume": null
+      "resume": null,
+      "run": false
     }
   ]
 }
